@@ -1,0 +1,60 @@
+name: Daily ZITADEL Docker image backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "11 5 * * *"
+      timezone: "Europe/Ljubljana"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: zitadel-docker-image-backup
+  cancel-in-progress: false
+
+jobs:
+  mirror-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Back up latest stable multi-platform release image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          release_tag="$(gh api repos/zitadel/zitadel/releases/latest --jq '.tag_name')"
+          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected upstream release tag: $release_tag" >&2
+            exit 1
+          fi
+
+          owner="${REPOSITORY_OWNER,,}"
+          source="ghcr.io/zitadel/zitadel:${release_tag}"
+          destination="ghcr.io/${owner}/zitadel-image-backup"
+
+          echo "Verifying upstream image: $source"
+          docker buildx imagetools inspect "$source" --raw > /dev/null
+
+          echo "Backing up $source to $destination"
+          docker buildx imagetools create \
+            --tag "$destination:$release_tag" \
+            --tag "$destination:stable" \
+            "$source"
+
+          echo "Verifying backed-up image: $destination:$release_tag"
+          docker buildx imagetools inspect "$destination:$release_tag" --raw > /dev/null
+          echo "Image backup successful."
