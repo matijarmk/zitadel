@@ -1,0 +1,40 @@
+name: Backup ZITADEL Docker images
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '11 5 * * *'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: zitadel-docker-backup
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Install Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Copy latest upstream release with all architectures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          tag="$(gh api repos/zitadel/zitadel/releases/latest --jq .tag_name)"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release tag: $tag"; exit 1; }
+          owner="${OWNER,,}"
+          src="docker://ghcr.io/zitadel/zitadel:$tag"
+          dest="docker://ghcr.io/$owner/zitadel-image-backup:$tag"
+          echo "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --all --preserve-digests "$src" "$dest"
+          skopeo inspect --raw "$dest" >/dev/null
+          echo "Mirrored $tag to GHCR with all architectures."
