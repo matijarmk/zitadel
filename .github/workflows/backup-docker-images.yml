@@ -2,6 +2,9 @@ name: Backup ZITADEL Docker images
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/backup-docker-images.yml']
   schedule:
     - cron: '11 5 * * *'
 
