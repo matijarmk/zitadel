@@ -1,0 +1,32 @@
+name: Backup ZITADEL upstream source
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zitadel-upstream-backup
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Mirror upstream main into dedicated backup branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init mirror
+          cd mirror
+          git remote add upstream https://github.com/zitadel/zitadel.git
+          git remote add backup "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 upstream main
+          # Only the dedicated backup branch is replaced. Never modify fork main.
+          git push --force backup FETCH_HEAD:refs/heads/backup/upstream-main
+          echo "Backed up upstream main: $(git rev-parse FETCH_HEAD)"
